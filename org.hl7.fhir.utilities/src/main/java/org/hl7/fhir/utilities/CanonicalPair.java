@@ -2,13 +2,14 @@ package org.hl7.fhir.utilities;
 
 public class CanonicalPair {
 
-  private String url;
-  private String version;
+  private final String url;
+  private final String version;
   
   public CanonicalPair(String target) {
-    if (target != null && target.contains("|")) {
-      this.url = target.substring(0, target.indexOf("|"));
-      this.version = target.substring(target.indexOf("|")+1);     
+    int pipeIndex = target != null ? target.indexOf('|') : -1;
+    if (pipeIndex >= 0) {
+      this.url = target.substring(0, pipeIndex);
+      this.version = target.substring(pipeIndex+1);     
     } else {
       this.url = target;
       this.version = null;

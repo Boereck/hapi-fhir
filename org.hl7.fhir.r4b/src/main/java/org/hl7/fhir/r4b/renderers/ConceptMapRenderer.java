@@ -22,6 +22,7 @@ import org.hl7.fhir.r4b.model.Resource;
 import org.hl7.fhir.r4b.renderers.utils.RenderingContext;
 import org.hl7.fhir.r4b.renderers.utils.Resolver.ResourceContext;
 import org.hl7.fhir.r4b.utils.ToolingExtensions;
+import org.hl7.fhir.utilities.CanonicalPair;
 import org.hl7.fhir.utilities.Utilities;
 import org.hl7.fhir.utilities.xhtml.XhtmlNode;
 
@@ -151,8 +152,9 @@ public class ConceptMapRenderer extends TerminologyRenderer {
           tr = tbl.tr();
           td = tr.td();
           td.addText(ccl.getCode());
+          var canonical = new CanonicalPair(grp.getSource());
           display = ccl.hasDisplay() ? ccl.getDisplay()
-              : getDisplayForConcept(systemFromCanonical(grp.getSource()), versionFromCanonical(grp.getSource()),
+              : getDisplayForConcept(canonical.getUrl(), canonical.getVersion(),
                   ccl.getCode());
           if (display != null && !isSameCodeAndDisplay(ccl.getCode(), display))
             td.tx(" (" + display + ")");
@@ -166,7 +168,7 @@ public class ConceptMapRenderer extends TerminologyRenderer {
           td = tr.td();
           td.addText(ccm.getCode());
           display = ccm.hasDisplay() ? ccm.getDisplay()
-              : getDisplayForConcept(systemFromCanonical(grp.getTarget()), versionFromCanonical(grp.getTarget()),
+              : getDisplayForConcept(canonical.getUrl(), canonical.getVersion(),
                   ccm.getCode());
           if (display != null && !isSameCodeAndDisplay(ccm.getCode(), display))
             td.tx(" (" + display + ")");
@@ -247,7 +249,8 @@ public class ConceptMapRenderer extends TerminologyRenderer {
               td.addText(ccl.getCode());
             else
               td.addText(grp.getSource() + " / " + ccl.getCode());
-            display = getDisplayForConcept(systemFromCanonical(grp.getSource()), versionFromCanonical(grp.getSource()),
+            var canonical = new CanonicalPair(grp.getSource());
+            display = getDisplayForConcept(canonical.getUrl(), canonical.getVersion(),
                 ccl.getCode());
             tr.td().style("border-left-width: 0px").tx(display == null ? "" : display);
             tr.td().colspan("4").style("background-color: #efefef").tx("(not mapped)");
@@ -269,8 +272,9 @@ public class ConceptMapRenderer extends TerminologyRenderer {
                   td.addText(ccl.getCode());
                 else
                   td.addText(grp.getSource() + " / " + ccl.getCode());
+                var canonical = new CanonicalPair(grp.getSource());
                 display = ccl.hasDisplay() ? ccl.getDisplay()
-                    : getDisplayForConcept(systemFromCanonical(grp.getSource()), versionFromCanonical(grp.getSource()),
+                    : getDisplayForConcept(canonical.getUrl(), canonical.getVersion(),
                         ccl.getCode());
                 td = tr.td();
                 if (!last)
@@ -310,8 +314,9 @@ public class ConceptMapRenderer extends TerminologyRenderer {
                 td.addText(ccm.getCode());
               else
                 td.addText(grp.getTarget() + " / " + ccm.getCode());
+              var canonical = new CanonicalPair(grp.getSource());
               display = ccm.hasDisplay() ? ccm.getDisplay()
-                  : getDisplayForConcept(systemFromCanonical(grp.getTarget()), versionFromCanonical(grp.getTarget()),
+                  : getDisplayForConcept(canonical.getUrl(), canonical.getVersion(),
                       ccm.getCode());
               tr.td().style("border-left-width: 0px").tx(display == null ? "" : display);
 
