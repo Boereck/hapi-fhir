@@ -3,6 +3,8 @@ package org.hl7.fhir.common.hapi.validation.validator;
 import ca.uhn.fhir.context.FhirVersionEnum;
 import ca.uhn.fhir.context.support.ConceptValidationOptions;
 import ca.uhn.fhir.context.support.IValidationSupport;
+import ca.uhn.fhir.context.support.IValidationSupport.BaseConceptProperty;
+import ca.uhn.fhir.context.support.IValidationSupport.CodeValidationIssue;
 import ca.uhn.fhir.context.support.ValidationSupportContext;
 import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.rest.server.exceptions.InternalErrorException;
@@ -860,6 +862,7 @@ public class VersionSpecificWorkerContextWrapper extends I18nBase implements IWo
 			final boolean valueSetResultContainsInvalidDisplay = result.getIssues().stream()
 					.anyMatch(VersionSpecificWorkerContextWrapper::hasInvalidDisplayDetailCode);
 			if (codeSystemResult != null) {
+				result = copyCodeValidationResult(result);
 				for (IValidationSupport.CodeValidationIssue codeValidationIssue : codeSystemResult.getIssues()) {
 					/* Value set validation should already have checked the display name. If we get INVALID_DISPLAY
 					issues from code system validation, they will only repeat what was already caught.
@@ -871,6 +874,33 @@ public class VersionSpecificWorkerContextWrapper extends I18nBase implements IWo
 			}
 		}
 		return result;
+	}
+
+	private IValidationSupport.CodeValidationResult copyCodeValidationResult(
+			IValidationSupport.CodeValidationResult toCopy) {
+		IValidationSupport.CodeValidationResult result = new IValidationSupport.CodeValidationResult();
+
+		List<CodeValidationIssue> issues = toCopy.getIssues();
+		List<BaseConceptProperty> properties = toCopy.getProperties();
+
+		result.setCode(toCopy.getCode())
+				.setCodeSystemName(toCopy.getCodeSystemName())
+				.setCodeSystemVersion(toCopy.getCodeSystemVersion())
+				.setDisplay(toCopy.getDisplay())
+				.setIssues(copyList(issues))
+				.setMessage(toCopy.getMessage())
+				.setSeverity(toCopy.getSeverity())
+				.setSourceDetails(toCopy.getSourceDetails())
+				.setProperties(copyList(properties));
+		return result;
+	}
+
+	private <T> List<T> copyList(List<T> issues) {
+		if (issues == null) {
+			return null;
+		} else {
+			return new ArrayList<>(issues);
+		}
 	}
 
 	private static boolean hasInvalidDisplayDetailCode(IValidationSupport.CodeValidationIssue theIssue) {
