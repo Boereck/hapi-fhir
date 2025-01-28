@@ -14,7 +14,6 @@ import ca.uhn.fhir.i18n.Msg;
 import ca.uhn.fhir.rest.server.exceptions.ResourceNotFoundException;
 import ca.uhn.fhir.sl.cache.Cache;
 import ca.uhn.fhir.sl.cache.CacheFactory;
-import ca.uhn.fhir.util.FhirTerser;
 import ca.uhn.fhir.util.Logs;
 import ca.uhn.fhir.util.StopWatch;
 import jakarta.annotation.Nonnull;
@@ -37,7 +36,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -45,7 +43,6 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static org.apache.commons.lang3.ObjectUtils.defaultIfNull;
-import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
 import static org.apache.commons.lang3.StringUtils.isBlank;
 import static org.apache.commons.lang3.StringUtils.isNotBlank;
 
@@ -121,31 +118,18 @@ public class ValidationSupportChain implements IValidationSupport {
 	@Nullable
 	private final Map<BaseKey<?>, Object> myNonExpiringCache;
 
-	/**
-	 * See class documentation for an explanation of why this is separate
-	 * and non-expiring. Note that this field is non-synchronized. If you
-	 * access it, you should first wrap the call in
-	 * <code>synchronized(myStructureDefinitionsByUrl)</code>.
-	 */
-	@Nonnull
-	private final Map<String, IBaseResource> myStructureDefinitionsByUrl = new HashMap<>();
-	/**
-	 * See class documentation for an explanation of why this is separate
-	 * and non-expiring. Note that this field is non-synchronized. If you
-	 * access it, you should first wrap the call in
-	 * <code>synchronized(myStructureDefinitionsByUrl)</code> (synchronize on
-	 * the other field because both collections are expected to be modified
-	 * at the same time).
-	 */
-	@Nonnull
-	private final List<IBaseResource> myStructureDefinitionsAsList = new ArrayList<>();
-
 	private final ThreadPoolExecutor myBackgroundExecutor;
 	private final CacheConfiguration myCacheConfiguration;
 	private boolean myEnabledValidationForCodingsLogicalAnd;
 	private String myName = getClass().getSimpleName();
 	private ValidationSupportChainMetrics myMetrics;
-	private volatile boolean myHaveFetchedAllStructureDefinitions = false;
+
+	/**
+	 * See class documentation for an explanation of why this is separate
+	 * and non-expiring.
+	 */
+	@Nonnull
+	private final ResourceAggregator structureDefinitionAggregator;
 
 	/**
 	 * Constructor which initializes the chain with no modules (modules
@@ -236,6 +220,9 @@ public class ValidationSupportChain implements IValidationSupport {
 					threadFactory,
 					new ThreadPoolExecutor.DiscardPolicy());
 		}
+
+		boolean doAggregate = myExpiringCache != null;
+		structureDefinitionAggregator = new ResourceAggregator(doAggregate);
 
 		for (IValidationSupport next : theValidationSupportModules) {
 			if (next != null) {
@@ -359,7 +346,6 @@ public class ValidationSupportChain implements IValidationSupport {
 	@Override
 	public void invalidateCaches() {
 		ourLog.debug("Invalidating caches in {} validation support modules", myChain.size());
-		myHaveFetchedAllStructureDefinitions = false;
 		for (IValidationSupport next : myChain) {
 			next.invalidateCaches();
 		}
@@ -369,10 +355,8 @@ public class ValidationSupportChain implements IValidationSupport {
 		if (myExpiringCache != null) {
 			myExpiringCache.invalidateAll();
 		}
-		synchronized (myStructureDefinitionsByUrl) {
-			myStructureDefinitionsByUrl.clear();
-			myStructureDefinitionsAsList.clear();
-		}
+
+		structureDefinitionAggregator.clear();
 	}
 
 	/**
@@ -594,24 +578,8 @@ public class ValidationSupportChain implements IValidationSupport {
 	@Override
 	@Nonnull
 	public List<IBaseResource> fetchAllStructureDefinitions() {
-		if (!myHaveFetchedAllStructureDefinitions) {
-			FhirTerser terser = getFhirContext().newTerser();
-			List<IBaseResource> allStructureDefinitions =
-					doFetchStructureDefinitions(IValidationSupport::fetchAllStructureDefinitions);
-			if (myExpiringCache != null) {
-				synchronized (myStructureDefinitionsByUrl) {
-					for (IBaseResource structureDefinition : allStructureDefinitions) {
-						String url = terser.getSinglePrimitiveValueOrNull(structureDefinition, "url");
-						url = defaultIfBlank(url, UUID.randomUUID().toString());
-						if (myStructureDefinitionsByUrl.putIfAbsent(url, structureDefinition) == null) {
-							myStructureDefinitionsAsList.add(structureDefinition);
-						}
-					}
-				}
-			}
-			myHaveFetchedAllStructureDefinitions = true;
-		}
-		return Collections.unmodifiableList(new ArrayList<>(myStructureDefinitionsAsList));
+		return structureDefinitionAggregator.computeAllIfAbsent(
+				getFhirContext(), () -> doFetchStructureDefinitions(IValidationSupport::fetchAllStructureDefinitions));
 	}
 
 	@SuppressWarnings("unchecked")
@@ -726,23 +694,12 @@ public class ValidationSupportChain implements IValidationSupport {
 
 	@Override
 	public IBaseResource fetchStructureDefinition(String theUrl) {
-		synchronized (myStructureDefinitionsByUrl) {
-			IBaseResource candidate = myStructureDefinitionsByUrl.get(theUrl);
-			if (candidate == null) {
-				Function<IValidationSupport, IBaseResource> invoker = v -> v.fetchStructureDefinition(theUrl);
-				ResourceByUrlKey<IBaseResource> key =
-						new ResourceByUrlKey<>(ResourceByUrlKey.TypeEnum.STRUCTUREDEFINITION, theUrl);
-				candidate = fetchValue(key, invoker, theUrl);
-				if (myExpiringCache != null) {
-					if (candidate != null) {
-						if (myStructureDefinitionsByUrl.putIfAbsent(theUrl, candidate) == null) {
-							myStructureDefinitionsAsList.add(candidate);
-						}
-					}
-				}
-			}
-			return candidate;
-		}
+		return structureDefinitionAggregator.computeIfAbsent(getFhirContext(), theUrl, url -> {
+			Function<IValidationSupport, IBaseResource> invoker = v -> v.fetchStructureDefinition(url);
+			ResourceByUrlKey<IBaseResource> key =
+					new ResourceByUrlKey<>(ResourceByUrlKey.TypeEnum.STRUCTUREDEFINITION, url);
+			return fetchValue(key, invoker, url);
+		});
 	}
 
 	@Override
@@ -992,10 +949,8 @@ public class ValidationSupportChain implements IValidationSupport {
 	}
 
 	int getMetricNonExpiringCacheEntries() {
-		synchronized (myStructureDefinitionsByUrl) {
-			int size = myNonExpiringCache != null ? myNonExpiringCache.size() : 0;
-			return size + myStructureDefinitionsAsList.size();
-		}
+		int size = myNonExpiringCache != null ? myNonExpiringCache.size() : 0;
+		return size + structureDefinitionAggregator.size();
 	}
 
 	int getMetricExpiringCacheMaxSize() {
