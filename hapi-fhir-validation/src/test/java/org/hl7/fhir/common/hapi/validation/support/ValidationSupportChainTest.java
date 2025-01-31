@@ -38,6 +38,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -73,6 +75,22 @@ public class ValidationSupportChainTest extends BaseTest {
 	private IValidationSupport myValidationSupport1;
 	@Mock(strictness = Mock.Strictness.LENIENT)
 	private IValidationSupport myValidationSupport2;
+
+	@Test
+	public void testConcurrentStructDefCacheAndClear() {
+		DefaultProfileValidationSupport ctx = new DefaultProfileValidationSupport(FhirContext.forR5Cached());
+		for(int i=0; i< 10_000; i++) {
+			var chain = new ValidationSupportChain(ctx);
+			ForkJoinPool pool = ForkJoinPool.commonPool();
+			var fetchFuture = pool.submit(chain::fetchAllStructureDefinitions);
+			var invalidateFuture = pool.submit(chain::invalidateCaches);
+			fetchFuture.join();
+			invalidateFuture.join();
+			var result = chain.fetchAllStructureDefinitions();
+			assertThat(result).isNotEmpty();
+			assertThat(result).allMatch(Objects::nonNull);
+		}
+	}
 
 	@Test
 	public void testVersionCheck() {
