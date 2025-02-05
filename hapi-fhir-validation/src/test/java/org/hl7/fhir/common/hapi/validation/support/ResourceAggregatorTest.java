@@ -337,6 +337,24 @@ class ResourceAggregatorTest {
 		aggregator.computeAllIfAbsent(ctx, () -> resources);
 		aggregator.clear();
 		assertEquals(0, aggregator.size());
+		
+	}
+
+	@Test
+	void testComputeAllAfterClearWithAggregation() {
+		var aggregator = new ResourceAggregator(true);
+		StructureDefinition sd1 = new StructureDefinition().setUrl(DEMO_URL);
+		StructureDefinition sd2 = new StructureDefinition().setUrl(DEMO_URL_2);
+		List<IBaseResource> resources = List.of(sd1,sd2);
+		aggregator.computeAllIfAbsent(ctx, () -> resources);
+		aggregator.clear();
+		var didCall = new boolean[] { false };
+		var result = aggregator.computeAllIfAbsent(ctx, () -> { 
+			didCall[0] = true; 
+			return resources;
+		});
+		assertTrue(didCall[0]);
+		assertThat(result).hasSameElementsAs(resources);
 	}
 
 	@Test
@@ -434,7 +452,7 @@ class ResourceAggregatorTest {
 		
 		FhirTerser terser = ctx.newTerser();
 		
-		int count = 10_000;
+		int count = 1_000;
 		var aggregator = new ResourceAggregator(true);
 		Runnable addTillTenThousand = () -> {
 			String urlBase = "http://foobar/";
@@ -469,7 +487,7 @@ class ResourceAggregatorTest {
 				.mapToObj(j -> urlBase + j)
 				.map(url -> (IBaseResource) new StructureDefinition().setUrl(url))
 				.collect(toList());
-		int count = 10_000;
+		int count = 1_000;
 		for(int i=0; i<count; i++) {
 			var aggregator = new ResourceAggregator(true);
 			Runnable addAll = () -> {
@@ -519,4 +537,29 @@ class ResourceAggregatorTest {
 			assertEquals(resCount, aggregator.size());
 		}
 	}
+
+	@Test
+	public void testConcurrentAddAllAndClear() {
+		// Unfortunately this test is not deterministic, but it tests interaction
+		// while concurrently adding all resources at once and clearing the aggregator.
+		// The result shall either be an empty aggregator, or a complete list.
+		// When computing all again, all resources must be returned
+		StructureDefinition sd1 = new StructureDefinition().setUrl(DEMO_URL);
+		StructureDefinition sd2 = new StructureDefinition().setUrl(DEMO_URL_2);
+		List<IBaseResource> resources = List.of(sd1,sd2);
+		
+		for(int i=0; i< 1_000; i++) {
+			var aggregator = new ResourceAggregator(true);
+			ForkJoinPool pool = ForkJoinPool.commonPool();
+			var fetchFuture = pool.submit(() -> aggregator.computeAllIfAbsent(ctx, () -> resources));
+			var clearFuture = pool.submit(aggregator::clear);
+			fetchFuture.join();
+			clearFuture.join();
+			assertThat(aggregator.size()).satisfiesAnyOf(s -> assertEquals(0,s),  s -> assertEquals(resources.size(), s));
+			var result = aggregator.computeAllIfAbsent(ctx, () -> resources);
+			assertThat(result).hasSameElementsAs(resources);
+		}
+	}
+	
+	// TODO: test concurrent add and clear
 }

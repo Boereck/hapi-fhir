@@ -28,7 +28,7 @@ import static org.apache.commons.lang3.StringUtils.defaultIfBlank;
  * called and a list of resources was added and afterwards {@link #computeIfAbsent}
  * is called and a resource not part of the initially added list of resources is aggregated.
  */
-class ResourceAggregator {
+public class ResourceAggregator implements IResourceAggregator {
 
 	private final boolean actuallyStore;
 
@@ -141,6 +141,7 @@ class ResourceAggregator {
 	 *  be {@code null}, and the returned list must also not be {@code null}.
 	 * @return list of all aggregated or computed resources
 	 */
+	@Override
 	public List<IBaseResource> computeAllIfAbsent(
 			FhirContext ctx, Supplier<? extends List<IBaseResource>> listSupplier) {
 		if (!actuallyStore) {
@@ -182,6 +183,7 @@ class ResourceAggregator {
 	 * @return the resource with the given {@code url}, or {@code null} if no such resource can be found or
 	 *  computed
 	 */
+	@Override
 	public IBaseResource computeIfAbsent(
 			FhirContext ctx, String url, Function<? super String, ? extends IBaseResource> mapperFunction) {
 		if (!actuallyStore) {
@@ -202,6 +204,7 @@ class ResourceAggregator {
 	/**
 	 * Clears all previously aggregated resources.
 	 */
+	@Override
 	public void clear() {
 		if (!actuallyStore) {
 			return;
@@ -232,6 +235,7 @@ class ResourceAggregator {
 	 * Returns the amount of currently aggregated resources.
 	 * @return number of resources aggregated until now
 	 */
+	@Override
 	public int size() {
 		if (!actuallyStore) {
 			return 0;

@@ -188,6 +188,19 @@ public class ValidationSupportChain implements IValidationSupport {
 	public ValidationSupportChain(
 			@Nonnull CacheConfiguration theCacheConfiguration,
 			@Nonnull List<IValidationSupport> theValidationSupportModules) {
+		this(theCacheConfiguration, theValidationSupportModules, ResourceAggregator::new);
+	}
+
+	/**
+	 * Constructor
+	 *
+	 * @param theCacheConfiguration       The caching configuration
+	 * @param theValidationSupportModules The initial modules to add to the chain
+	 */
+	public ValidationSupportChain(
+			@Nonnull CacheConfiguration theCacheConfiguration,
+			@Nonnull List<IValidationSupport> theValidationSupportModules,
+			Function<Boolean, IResourceAggregator> aggrConstructor) {
 
 		Validate.notNull(theCacheConfiguration, "theCacheConfiguration must not be null");
 		Validate.notNull(theValidationSupportModules, "theValidationSupportModules must not be null");
